@@ -10,13 +10,14 @@ import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 public class UpdateController {
 
-    private static final String VERSION_FILE_URL = "https://drive.google.com/uc?export=download&id=1d27Ga-zrQ8x1VDrbd1uBvzvTnjYeR8jT"; // link do pliku z wersją
     private static final String UPDATE_FILE_URL = "https://drive.google.com/uc?export=download&id=1d27Ga-zrQ8x1VDrbd1uBvzvTnjYeR8jT"; // link do pliku aktualizacji
 
     @FXML
@@ -30,6 +31,27 @@ public class UpdateController {
         welcomeText.setText("Nowa wersja aplikacji");
     }
 
+    public static String getCurrentAppPath() {
+        try {
+            Path path = Paths.get(UpdateController.class.getProtectionDomain().getCodeSource().getLocation().toURI()).getParent();
+            return path.toString();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    private void runUpdateScript(String appPath) {
+        try {
+            String command = String.format("cmd /c start update.bat \"%s\"", appPath);
+            Runtime.getRuntime().exec(command);
+
+            Platform.exit();
+            System.exit(0);
+        } catch (Exception e) {
+            showAlert("Błąd podczas uruchamiania aktualizacji: " + e.getMessage());
+        }
+    }
 
     @FXML
     public void handleUpdate() {
@@ -54,7 +76,7 @@ public class UpdateController {
     }
 
     private String getLatestVersionFromDrive() throws Exception {
-        URL url = new URL(VERSION_FILE_URL);
+        URL url = new URL(UPDATE_FILE_URL);
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
         connection.setRequestMethod("GET");
 
@@ -69,8 +91,11 @@ public class UpdateController {
         new Thread(() -> {
             try {
                 downloadUpdateFile(UPDATE_FILE_URL);
-                // Możesz tutaj uruchomić instalator aktualizacji, jeśli to konieczne
-                Platform.runLater(() -> showAlert("Aktualizacja zakończona pomyślnie!"));
+                String currentAppPath = getCurrentAppPath();
+                Platform.runLater(() -> {
+                    showAlert("Aktualizacja zakończona pomyślnie!");
+                    runUpdateScript(currentAppPath);
+                });
             } catch (Exception e) {
                 Platform.runLater(() -> showAlert("Błąd podczas aktualizacji: " + e.getMessage()));
             }
@@ -83,14 +108,12 @@ public class UpdateController {
         connection.setRequestMethod("GET");
         connection.connect();
 
-        // Sprawdzenie, czy odpowiedź jest poprawna
         if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) {
             throw new RuntimeException("Błąd podczas pobierania pliku: " + connection.getResponseCode());
         }
 
-        // Zapisz plik aktualizacji
         try (InputStream inputStream = connection.getInputStream();
-             FileOutputStream outputStream = new FileOutputStream("update.zip")) { // Zapisz plik lokalnie
+             FileOutputStream outputStream = new FileOutputStream("update.zip")) {
             byte[] buffer = new byte[1024];
             int bytesRead;
 
@@ -99,9 +122,8 @@ public class UpdateController {
             }
         }
 
-        // Rozpakowywanie pliku zip, jeśli to konieczne
-        unzip("update.zip", "update_directory");
-        Files.delete(new File("update.zip").toPath()); // Usuń plik zip po rozpakowaniu
+        unzip("update.zip", getCurrentAppPath());
+        Files.delete(new File("update.zip").toPath());
     }
 
     private void unzip(String zipFilePath, String destDir) throws IOException {
@@ -115,10 +137,8 @@ public class UpdateController {
             while (entry != null) {
                 String filePath = destDir + File.separator + entry.getName();
                 if (!entry.isDirectory()) {
-                    // Jeśli to plik, wypakuj go
                     extractFile(zipIn, filePath);
                 } else {
-                    // Jeśli to katalog, utwórz go
                     File dir = new File(filePath);
                     dir.mkdirs();
                 }
